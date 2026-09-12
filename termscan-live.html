@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TERMSCAN — Live</title>
+<style>
+  :root {
+    --bg: #0B0D0B;
+    --panel: #141712;
+    --line: #232821;
+    --ink: #E9F2E8;
+    --dim: #7C8A7C;
+    --acc: #FF7A18;
+    --ok: #2BE860;
+    --err: #FF4D4D;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    max-width: 480px;
+    margin: 0 auto;
+    min-height: 100vh;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 14px 16px 11px;
+    border-bottom: 1px solid var(--line);
+  }
+  header .title { font-size: 16px; font-weight: 800; letter-spacing: 1.5px; color: var(--acc); }
+  header .ver { font-size: 11.5px; color: var(--dim); letter-spacing: .5px; }
+  header .spacer { flex: 1; }
+  header .count { font-size: 11.5px; color: var(--dim); letter-spacing: .5px; }
+  header .count b { color: var(--ink); font-weight: 700; }
+
+  .viewfinder-wrap {
+    position: relative;
+    margin: 14px 16px 0;
+    height: 300px;
+    background: #000;
+    border: 1px solid var(--line);
+    overflow: hidden;
+    border-radius: 2px;
+  }
+  video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .frame {
+    position: absolute;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    width: 78%; height: 60%;
+    pointer-events: none;
+  }
+  .corner {
+    position: absolute;
+    width: 26px; height: 26px;
+    border-color: var(--acc);
+    border-style: solid;
+    border-width: 0;
+  }
+  .corner.tl { left: 0; top: 0; border-left-width: 3px; border-top-width: 3px; }
+  .corner.tr { right: 0; top: 0; border-right-width: 3px; border-top-width: 3px; }
+  .corner.bl { left: 0; bottom: 0; border-left-width: 3px; border-bottom-width: 3px; }
+  .corner.br { right: 0; bottom: 0; border-right-width: 3px; border-bottom-width: 3px; }
+
+  .laser {
+    position: absolute;
+    left: 0; right: 0;
+    height: 2px;
+    background: var(--ok);
+    box-shadow: 0 0 14px 2px var(--ok);
+    top: 0;
+    opacity: 0;
+  }
+  .laser.active {
+    opacity: 1;
+    animation: sweep 1.6s ease-in-out infinite;
+  }
+  @keyframes sweep {
+    0%   { transform: translateY(0); }
+    50%  { transform: translateY(178px); }
+    100% { transform: translateY(0); }
+  }
+
+  .hit-flash {
+    position: absolute;
+    inset: 0;
+    background: var(--ok);
+    opacity: 0;
+    mix-blend-mode: overlay;
+    pointer-events: none;
+  }
+  .hit-flash.flash { animation: flash .35s ease-out; }
+  @keyframes flash {
+    0% { opacity: .55; }
+    100% { opacity: 0; }
+  }
+
+  .overlay-msg {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 20px;
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--dim);
+    background: rgba(0,0,0,.55);
+  }
+  .overlay-msg.err { color: var(--err); }
+  .overlay-msg[hidden] { display: none; }
+
+  .controls {
+    display: flex;
+    gap: 8px;
+    padding: 12px 16px;
+  }
+  button {
+    flex: 1;
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: .5px;
+    padding: 10px 12px;
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: var(--acc); color: var(--acc); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.primary { border-color: var(--acc); color: var(--acc); }
+  button.danger:hover:not(:disabled) { border-color: var(--err); color: var(--err); }
+
+  .results {
+    flex: 1;
+    overflow: auto;
+    padding: 4px 16px 20px;
+  }
+  .results h2 {
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: var(--dim);
+    font-weight: 700;
+    margin: 10px 0 8px;
+  }
+  .empty {
+    font-size: 12px;
+    color: var(--dim);
+    padding: 20px 0;
+    text-align: center;
+  }
+  .hit {
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--ok);
+    background: var(--panel);
+    padding: 9px 11px;
+    margin-bottom: 7px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .hit .val {
+    font-size: 13px;
+    font-weight: 700;
+    word-break: break-all;
+    color: var(--ink);
+  }
+  .hit .meta {
+    display: flex;
+    gap: 8px;
+    font-size: 10.5px;
+    color: var(--dim);
+    letter-spacing: .3px;
+  }
+  .hit .meta .fmt { color: var(--acc); }
+  .hit .copy {
+    align-self: flex-end;
+    background: none;
+    border: none;
+    color: var(--dim);
+    font-size: 10.5px;
+    padding: 2px 0 0;
+    cursor: pointer;
+    text-decoration: underline;
+  }
+  .hit .copy:hover { color: var(--acc); }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="title">TERMSCAN</span>
+  <span class="ver">live</span>
+  <div class="spacer"></div>
+  <span class="count">TREFFER <b id="hitCount">0</b></span>
+</header>
+
+<div class="viewfinder-wrap">
+  <video id="video" playsinline muted autoplay></video>
+  <div class="hit-flash" id="hitFlash"></div>
+  <div class="frame">
+    <div class="corner tl"></div>
+    <div class="corner tr"></div>
+    <div class="corner bl"></div>
+    <div class="corner br"></div>
+    <div class="laser" id="laser"></div>
+  </div>
+  <div class="overlay-msg" id="overlay">
+    Kamera starten, um zu scannen.
+  </div>
+</div>
+
+<div class="controls">
+  <button class="primary" id="btnStart">SCAN START</button>
+  <button class="danger" id="btnStop" disabled>STOP</button>
+</div>
+
+<div class="results">
+  <h2>ERGEBNISSE</h2>
+  <div id="list">
+    <div class="empty" id="emptyMsg">Noch keine Codes gescannt.</div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const video      = document.getElementById('video');
+  const overlay    = document.getElementById('overlay');
+  const laser      = document.getElementById('laser');
+  const hitFlash   = document.getElementById('hitFlash');
+  const btnStart   = document.getElementById('btnStart');
+  const btnStop    = document.getElementById('btnStop');
+  const list       = document.getElementById('list');
+  const emptyMsg   = document.getElementById('emptyMsg');
+  const hitCountEl = document.getElementById('hitCount');
+
+  const FORMATS = [
+    'qr_code', 'ean_13', 'ean_8', 'code_128', 'code_39', 'code_93',
+    'codabar', 'itf', 'upc_a', 'upc_e', 'pdf417', 'aztec', 'data_matrix'
+  ];
+
+  let stream = null;
+  let detector = null;
+  let rafId = null;
+  let scanning = false;
+  let hitCount = 0;
+  const seenRecently = new Map(); // value -> last-seen timestamp, avoids spamming duplicates
+  const DEDUPE_MS = 2500;
+
+  function setOverlay(msg, isErr) {
+    overlay.textContent = msg;
+    overlay.hidden = !msg;
+    overlay.classList.toggle('err', !!isErr);
+  }
+
+  function supportsBarcodeDetector() {
+    return 'BarcodeDetector' in window;
+  }
+
+  async function start() {
+    if (!supportsBarcodeDetector()) {
+      setOverlay('BarcodeDetector wird von diesem Browser nicht unterstützt. Bitte aktuelles Chrome oder Edge auf Android verwenden.', true);
+      return;
+    }
+    if (!('mediaDevices' in navigator) || !navigator.mediaDevices.getUserMedia) {
+      setOverlay('Kamerazugriff nicht verfügbar. Läuft diese Seite über HTTPS (oder localhost)?', true);
+      return;
+    }
+
+    btnStart.disabled = true;
+
+    try {
+      detector = new BarcodeDetector({ formats: FORMATS });
+    } catch (e) {
+      // formats list rejected by the browser — fall back to its defaults
+      detector = new BarcodeDetector();
+    }
+
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false
+      });
+    } catch (e) {
+      setOverlay('Kamerazugriff verweigert oder fehlgeschlagen: ' + e.message, true);
+      btnStart.disabled = false;
+      return;
+    }
+
+    video.srcObject = stream;
+    await video.play();
+
+    setOverlay('');
+    laser.classList.add('active');
+    scanning = true;
+    btnStop.disabled = false;
+    tick();
+  }
+
+  function stop() {
+    scanning = false;
+    if (rafId) cancelAnimationFrame(rafId);
+    if (stream) {
+      stream.getTracks().forEach(t => t.stop());
+      stream = null;
+    }
+    video.srcObject = null;
+    laser.classList.remove('active');
+    btnStart.disabled = false;
+    btnStop.disabled = true;
+    setOverlay('Kamera gestoppt.');
+  }
+
+  async function tick() {
+    if (!scanning) return;
+    if (video.readyState >= 2) {
+      try {
+        const codes = await detector.detect(video);
+        for (const code of codes) handleHit(code);
+      } catch (e) {
+        // detect() can throw transiently (e.g. frame torn down mid-scan) — skip this frame
+      }
+    }
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function handleHit(code) {
+    const value = code.rawValue;
+    if (!value) return;
+
+    const now = Date.now();
+    const last = seenRecently.get(value);
+    if (last && now - last < DEDUPE_MS) return;
+    seenRecently.set(value, now);
+
+    hitCount++;
+    hitCountEl.textContent = String(hitCount);
+
+    hitFlash.classList.remove('flash');
+    void hitFlash.offsetWidth; // restart animation
+    hitFlash.classList.add('flash');
+
+    if (navigator.vibrate) navigator.vibrate(60);
+
+    addResultRow(value, code.format, now);
+  }
+
+  function addResultRow(value, format, ts) {
+    if (emptyMsg) emptyMsg.remove();
+
+    const row = document.createElement('div');
+    row.className = 'hit';
+
+    const val = document.createElement('div');
+    val.className = 'val';
+    val.textContent = value;
+
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const time = new Date(ts).toLocaleTimeString('de-DE');
+    meta.innerHTML = '<span class="fmt">' + escapeHtml(format || '?') + '</span><span>' + time + '</span>';
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'copy';
+    copyBtn.textContent = 'kopieren';
+    copyBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(value);
+        copyBtn.textContent = 'kopiert ✓';
+        setTimeout(() => { copyBtn.textContent = 'kopieren'; }, 1200);
+      } catch (e) {
+        copyBtn.textContent = 'fehlgeschlagen';
+      }
+    });
+
+    row.appendChild(val);
+    row.appendChild(meta);
+    row.appendChild(copyBtn);
+    list.prepend(row);
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+  }
+
+  btnStart.addEventListener('click', start);
+  btnStop.addEventListener('click', stop);
+
+  if (!window.isSecureContext) {
+    setOverlay('Diese Seite läuft nicht in einem sicheren Kontext (HTTPS/localhost) — Kamerazugriff wird vom Browser blockiert.', true);
+    btnStart.disabled = true;
+  } else if (!supportsBarcodeDetector()) {
+    setOverlay('BarcodeDetector wird von diesem Browser nicht unterstützt. Bitte aktuelles Chrome oder Edge auf Android verwenden.', true);
+    btnStart.disabled = true;
+  }
+})();
+</script>
+</body>
+</html>
