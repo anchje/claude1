@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>TERMSCAN — Live</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<meta name="theme-color" content="#0B0D0B">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root {
     --bg: #0B0D0B;
@@ -203,6 +208,9 @@
     text-decoration: underline;
   }
   .hit .copy:hover { color: var(--acc); }
+  .hit .sync { color: var(--dim); }
+  .hit .sync.ok { color: var(--ok); }
+  .hit .sync.err { color: var(--err); }
 </style>
 </head>
 <body>
@@ -257,6 +265,12 @@
     'qr_code', 'ean_13', 'ean_8', 'code_128', 'code_39', 'code_93',
     'codabar', 'itf', 'upc_a', 'upc_e', 'pdf417', 'aztec', 'data_matrix'
   ];
+
+  const SUPABASE_URL = 'https://qiqjywcyqcrccgbocbdq.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_Ag1lcg-8MLSaA-zfgMAfRA_Uu8C8IpM';
+  const sb = window.supabase
+    ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
+    : null;
 
   let stream = null;
   let detector = null;
@@ -361,7 +375,8 @@
 
     if (navigator.vibrate) navigator.vibrate(60);
 
-    addResultRow(value, code.format, now);
+    const syncEl = addResultRow(value, code.format, now);
+    syncToSupabase(value, code.format, now, syncEl);
   }
 
   function addResultRow(value, format, ts) {
@@ -377,7 +392,11 @@
     const meta = document.createElement('div');
     meta.className = 'meta';
     const time = new Date(ts).toLocaleTimeString('de-DE');
+    const syncSpan = document.createElement('span');
+    syncSpan.className = 'sync';
+    syncSpan.textContent = 'speichert…';
     meta.innerHTML = '<span class="fmt">' + escapeHtml(format || '?') + '</span><span>' + time + '</span>';
+    meta.appendChild(syncSpan);
 
     const copyBtn = document.createElement('button');
     copyBtn.className = 'copy';
@@ -396,6 +415,27 @@
     row.appendChild(meta);
     row.appendChild(copyBtn);
     list.prepend(row);
+    return syncSpan;
+  }
+
+  async function syncToSupabase(value, format, ts, syncEl) {
+    if (!sb) {
+      if (syncEl) { syncEl.textContent = 'kein Supabase'; syncEl.classList.add('err'); }
+      return;
+    }
+    const { error } = await sb.from('scans').insert({
+      value,
+      format: format || null,
+      created_at: new Date(ts).toISOString()
+    });
+    if (!syncEl) return;
+    if (error) {
+      syncEl.textContent = 'nicht gespeichert';
+      syncEl.classList.add('err');
+    } else {
+      syncEl.textContent = 'gespeichert ✓';
+      syncEl.classList.add('ok');
+    }
   }
 
   function escapeHtml(s) {
@@ -413,6 +453,12 @@
   } else if (!supportsBarcodeDetector()) {
     setOverlay('BarcodeDetector wird von diesem Browser nicht unterstützt. Bitte aktuelles Chrome oder Edge auf Android verwenden.', true);
     btnStart.disabled = true;
+  }
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
   }
 })();
 </script>
